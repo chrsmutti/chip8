@@ -81,8 +81,32 @@ impl Processor {
         let opcode = self.current_opcode();
 
         match opcode[0] {
+            0x6 | 0x7 => self.const_ops(opcode),
             0x8 => self.eight(opcode),
             _ => {}
+        }
+    }
+
+    fn current_opcode(&self) -> [u8; 4] {
+        let code = (u16::from(self.memory[self.pc]) << 8) | u16::from(self.memory[self.pc + 1]);
+
+        [
+            ((code & 0xF000) >> 12) as u8,
+            ((code & 0x0F00) >> 8) as u8,
+            ((code & 0x00F0) >> 4) as u8,
+            ((code & 0x000F)) as u8,
+        ]
+    }
+
+    /// Implementation of the Const opcodes, 0x6 and 0x7.
+    fn const_ops(&mut self, opcode: [u8; 4]) {
+        let x = usize::from(opcode[1]);
+        let n = (opcode[2] * 16) + opcode[3];
+
+        match opcode[0] {
+            0x6 => self.v[x] = n,
+            0x7 => self.v[x] = self.v[x].saturating_add(n),
+            _ => unreachable!(),
         }
     }
 
@@ -135,16 +159,5 @@ impl Processor {
 
             _ => unreachable!(),
         }
-    }
-
-    fn current_opcode(&self) -> [u8; 4] {
-        let code = (u16::from(self.memory[self.pc]) << 8) | u16::from(self.memory[self.pc + 1]);
-
-        [
-            ((code & 0xF000) >> 12) as u8,
-            ((code & 0x0F00) >> 8) as u8,
-            ((code & 0x00F0) >> 4) as u8,
-            ((code & 0x000F)) as u8,
-        ]
     }
 }

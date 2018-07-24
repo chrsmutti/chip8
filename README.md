@@ -4,6 +4,8 @@ Rust implementation of a CHIP-8 VM.
 
 ### Opcodes
 
+- **6XNN**: Sets VX to NN.
+- **7XNN**: Adds NN to VX. (Carry flag is not changed)
 - **8XY0**: Sets VX to the value of VY.
 - **8XY1**: Sets VX to VX or VY. (Bitwise OR operation)
 - **8XY2**: Sets VX to VX and VY. (Bitwise AND operation)

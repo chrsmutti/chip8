@@ -4,6 +4,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use std::fs::File;
 use std::io::Read;
+use std::mem;
 
 const WIDTH: u8 = 64;
 const HEIGHT: u8 = 32;
@@ -57,7 +58,7 @@ struct Processor {
     i: u16,
     memory: [u8; 4096],
     v: [u8; 16],
-    stack: [u16; 16],
+    stack: [usize; 16],
     sp: usize,
     key: [u8; 16],
     gfx: [u8; GFX_SIZE],
@@ -81,6 +82,7 @@ impl Processor {
         let opcode = self.current_opcode();
 
         match opcode[0] {
+            0x0 => self.zero(opcode),
             0x6 | 0x7 => self.six_seven(opcode),
             0x8 => self.eight(opcode),
             _ => {}
@@ -101,11 +103,29 @@ impl Processor {
     fn full_opcode(opcode: [u8; 4]) -> u16 {
         opcode
             .into_iter()
+            .rev()
             .enumerate()
-            .fold(0, |acc, (idx, x)| acc + u16::from(*x) >> (idx * 4))
+            .fold(0, |acc, (idx, x)| acc + (u16::from(*x) << (idx * 4)))
     }
 
-    /// Implementation of the Const opcodes, 0x6 and 0x7.
+    /// Implementation of the 0x0 opcodes.
+    fn zero(&mut self, opcode: [u8; 4]) {
+        match Self::full_opcode(opcode) {
+            0x00E0 => {
+                mem::replace(&mut self.gfx, [0u8; GFX_SIZE]);
+            }
+            0x00EE => {
+                if self.sp > 0 {
+                    self.pc = self.stack[self.sp - 1];
+                    self.sp -= 0x1;
+                }
+            }
+
+            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+        }
+    }
+
+    /// Implementation of the 0x6 and 0x7 opcodes. (Constant operations)
     fn six_seven(&mut self, opcode: [u8; 4]) {
         let x = usize::from(opcode[1]);
         let n = (opcode[2] << 4) + opcode[3];
@@ -113,7 +133,8 @@ impl Processor {
         match opcode[0] {
             0x6 => self.v[x] = n,
             0x7 => self.v[x] = self.v[x].saturating_add(n),
-            _ => panic!("Non-implemented opcode: {:x}", Self::full_opcode(opcode)),
+
+            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
         }
     }
 
@@ -161,7 +182,7 @@ impl Processor {
                 self.v[x] = self.v[y];
             }
 
-            _ => panic!("Non-implemented opcode: {:x}", Self::full_opcode(opcode)),
+            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
         }
     }
 }
@@ -207,6 +228,39 @@ mod test {
         processor.six_seven(opcode);
 
         assert_eq!(processor.v[x], 0xFF)
+    }
+
+    #[test]
+    fn test_zero_clear_display() {
+        let opcode = [0x0, 0x0, 0xE, 0x0];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.gfx = [0x2; GFX_SIZE];
+        processor.zero(opcode);
+
+        assert_eq!(processor.gfx[0], 0x0)
+    }
+
+    #[test]
+    fn test_zero_subroutine_return() {
+        let opcode = [0x0, 0x0, 0xE, 0xE];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.stack = [0x255; 16];
+        processor.sp = 0x2;
+        processor.zero(opcode);
+
+        assert_eq!(processor.sp, 0x1);
+        assert_eq!(processor.pc, 0x255);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_non_implemented_opcode() {
+        let opcode = [0x0, 0xE, 0xE, 0xE];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.zero(opcode);
     }
 
 }

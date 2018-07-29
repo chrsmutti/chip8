@@ -83,7 +83,7 @@ impl Processor {
 
         match opcode[0] {
             0x0 => self.misc_ops(opcode),
-            0x1 | 0xB => self.control_flow_ops(opcode),
+            0x1 | 0x2 | 0xB => self.control_flow_ops(opcode),
             0x6 | 0x7 => self.const_ops(opcode),
             0x8 => self.math_bit_ops(opcode),
             _ => {}
@@ -132,6 +132,11 @@ impl Processor {
 
         match opcode[0] {
             0x1 => self.pc = n,
+            0x2 => {
+                self.stack[self.sp] = self.pc;
+                self.sp += 0x1;
+                self.pc = n;
+            }
             0xB => self.pc = usize::from(self.v[0x0]) + n,
 
             _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
@@ -295,6 +300,33 @@ mod test {
         processor.control_flow_ops(opcode);
 
         assert_eq!(processor.pc, 0xABC + 0x1);
+    }
+
+    #[test]
+    fn test_control_flow_ops_subroutine_call() {
+        let opcode = [0x2, 0xA, 0xB, 0xC];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        let starting_pos = processor.pc;
+        processor.control_flow_ops(opcode);
+
+        assert_eq!(processor.pc, 0xABC);
+        assert_eq!(processor.sp, 0x1);
+        assert_eq!(processor.stack[0], starting_pos);
+    }
+
+    #[test]
+    fn test_subroutine() {
+        let call_opcode = [0x2, 0xA, 0xB, 0xC];
+        let return_opcode = [0x0, 0x0, 0xE, 0xE];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        let starting_pos = processor.pc;
+        processor.control_flow_ops(call_opcode);
+        processor.misc_ops(return_opcode);
+
+        assert_eq!(processor.pc, starting_pos);
+        assert_eq!(processor.sp, 0);
     }
 
 }

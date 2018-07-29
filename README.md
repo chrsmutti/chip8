@@ -8,6 +8,7 @@ Rust implementation of a CHIP-8 VM.
 - **00EE**: Returns from a subroutine.
 
 - **1NNN**: Jumps to address NNN.
+- **2NNN**: Calls subroutine at NNN.
 - **BNNN**: Jumps to the address NNN plus V0.
 
 - **6XNN**: Sets VX to NN.

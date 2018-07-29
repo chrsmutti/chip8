@@ -81,7 +81,7 @@ impl Processor {
         let opcode = self.current_opcode();
 
         match opcode[0] {
-            0x6 | 0x7 => self.const_ops(opcode),
+            0x6 | 0x7 => self.six_seven(opcode),
             0x8 => self.eight(opcode),
             _ => {}
         }
@@ -98,15 +98,22 @@ impl Processor {
         ]
     }
 
+    fn full_opcode(opcode: [u8; 4]) -> u16 {
+        opcode
+            .into_iter()
+            .enumerate()
+            .fold(0, |acc, (idx, x)| acc + u16::from(*x) >> (idx * 4))
+    }
+
     /// Implementation of the Const opcodes, 0x6 and 0x7.
-    fn const_ops(&mut self, opcode: [u8; 4]) {
+    fn six_seven(&mut self, opcode: [u8; 4]) {
         let x = usize::from(opcode[1]);
-        let n = (opcode[2] * 16) + opcode[3];
+        let n = (opcode[2] << 4) + opcode[3];
 
         match opcode[0] {
             0x6 => self.v[x] = n,
             0x7 => self.v[x] = self.v[x].saturating_add(n),
-            _ => unreachable!(),
+            _ => panic!("Non-implemented opcode: {:x}", Self::full_opcode(opcode)),
         }
     }
 
@@ -121,21 +128,19 @@ impl Processor {
             0x2 => self.v[x] &= self.v[y],
             0x3 => self.v[x] ^= self.v[y],
             0x4 => {
-                self.v[x] = match self.v[x].overflowing_add(self.v[y]) {
-                    (result, true) => {
-                        self.v[0xF] = 0x1;
-                        result
-                    }
-                    (result, false) => result,
+                let (result, overflow) = self.v[x].overflowing_add(self.v[y]);
+                self.v[x] = result;
+
+                if overflow {
+                    self.v[0xF] = 0x1;
                 }
             }
             0x5 => {
-                self.v[x] = match self.v[x].overflowing_sub(self.v[y]) {
-                    (result, true) => {
-                        self.v[0xF] = 0x1;
-                        result
-                    }
-                    (result, false) => result,
+                let (result, overflow) = self.v[x].overflowing_sub(self.v[y]);
+                self.v[x] = result;
+
+                if overflow {
+                    self.v[0xF] = 0x1;
                 }
             }
             0x6 => {
@@ -143,12 +148,11 @@ impl Processor {
                 self.v[x] = self.v[y] >> 1;
             }
             0x7 => {
-                self.v[x] = match self.v[y].overflowing_sub(self.v[x]) {
-                    (result, true) => {
-                        self.v[0xF] = 0x1;
-                        result
-                    }
-                    (result, false) => result,
+                let (result, overflow) = self.v[y].overflowing_sub(self.v[x]);
+                self.v[x] = result;
+
+                if overflow {
+                    self.v[0xF] = 0x1;
                 }
             }
             0xE => {
@@ -157,7 +161,52 @@ impl Processor {
                 self.v[x] = self.v[y];
             }
 
-            _ => unreachable!(),
+            _ => panic!("Non-implemented opcode: {:x}", Self::full_opcode(opcode)),
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_six_seven_setting() {
+        let opcode = [0x6, 0x5, 0x6, 0x6];
+        let x = usize::from(opcode[1]);
+        let n = (opcode[2] << 4) + opcode[3];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.v[x] = 0xFF;
+        processor.six_seven(opcode);
+
+        assert_eq!(processor.v[x], n)
+    }
+
+    #[test]
+    fn test_six_seven_addition() {
+        let opcode = [0x7, 0x5, 0x6, 0x6];
+        let x = usize::from(opcode[1]);
+        let n = (opcode[2] << 4) + opcode[3];
+        let starting = 0x1;
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.v[x] = starting;
+        processor.six_seven(opcode);
+
+        assert_eq!(processor.v[x], starting + n)
+    }
+
+    #[test]
+    fn test_six_seven_adition_saturation() {
+        let opcode = [0x7, 0x5, 0xF, 0xF];
+        let x = usize::from(opcode[1]);
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.v[x] = 0xFF;
+        processor.six_seven(opcode);
+
+        assert_eq!(processor.v[x], 0xFF)
+    }
+
 }

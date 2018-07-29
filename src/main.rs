@@ -82,9 +82,10 @@ impl Processor {
         let opcode = self.current_opcode();
 
         match opcode[0] {
-            0x0 => self.zero(opcode),
-            0x6 | 0x7 => self.six_seven(opcode),
-            0x8 => self.eight(opcode),
+            0x0 => self.misc_ops(opcode),
+            0x1 | 0xB => self.control_flow_ops(opcode),
+            0x6 | 0x7 => self.const_ops(opcode),
+            0x8 => self.math_bit_ops(opcode),
             _ => {}
         }
     }
@@ -108,8 +109,8 @@ impl Processor {
             .fold(0, |acc, (idx, x)| acc + (u16::from(*x) << (idx * 4)))
     }
 
-    /// Implementation of the 0x0 opcodes.
-    fn zero(&mut self, opcode: [u8; 4]) {
+    /// Implementation of the 0x0 opcodes. (Misc operations)
+    fn misc_ops(&mut self, opcode: [u8; 4]) {
         match Self::full_opcode(opcode) {
             0x00E0 => {
                 mem::replace(&mut self.gfx, [0u8; GFX_SIZE]);
@@ -125,10 +126,22 @@ impl Processor {
         }
     }
 
+    /// Implementation of the 0x0 and 0xB opcodes. (Control flow operations)
+    fn control_flow_ops(&mut self, opcode: [u8; 4]) {
+        let n = usize::from(Self::full_opcode(opcode) & 0x0FFF);
+
+        match opcode[0] {
+            0x1 => self.pc = n,
+            0xB => self.pc = usize::from(self.v[0x0]) + n,
+
+            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+        }
+    }
+
     /// Implementation of the 0x6 and 0x7 opcodes. (Constant operations)
-    fn six_seven(&mut self, opcode: [u8; 4]) {
+    fn const_ops(&mut self, opcode: [u8; 4]) {
         let x = usize::from(opcode[1]);
-        let n = (opcode[2] << 4) + opcode[3];
+        let n = (Self::full_opcode(opcode) & 0x00FF) as u8;
 
         match opcode[0] {
             0x6 => self.v[x] = n,
@@ -138,8 +151,8 @@ impl Processor {
         }
     }
 
-    /// Implementation of the 0x8 Opcodes.
-    fn eight(&mut self, opcode: [u8; 4]) {
+    /// Implementation of the 0x8 Opcodes. (Math and Bit operations)
+    fn math_bit_ops(&mut self, opcode: [u8; 4]) {
         let x = usize::from(opcode[1]);
         let y = usize::from(opcode[2]);
 
@@ -192,20 +205,20 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_six_seven_setting() {
+    fn test_const_ops_setting() {
         let opcode = [0x6, 0x5, 0x6, 0x6];
         let x = usize::from(opcode[1]);
         let n = (opcode[2] << 4) + opcode[3];
 
         let mut processor = Processor::new([0x0; 4096]);
         processor.v[x] = 0xFF;
-        processor.six_seven(opcode);
+        processor.const_ops(opcode);
 
         assert_eq!(processor.v[x], n)
     }
 
     #[test]
-    fn test_six_seven_addition() {
+    fn test_const_ops_addition() {
         let opcode = [0x7, 0x5, 0x6, 0x6];
         let x = usize::from(opcode[1]);
         let n = (opcode[2] << 4) + opcode[3];
@@ -213,42 +226,42 @@ mod test {
 
         let mut processor = Processor::new([0x0; 4096]);
         processor.v[x] = starting;
-        processor.six_seven(opcode);
+        processor.const_ops(opcode);
 
         assert_eq!(processor.v[x], starting + n)
     }
 
     #[test]
-    fn test_six_seven_adition_saturation() {
+    fn test_const_ops_adition_saturation() {
         let opcode = [0x7, 0x5, 0xF, 0xF];
         let x = usize::from(opcode[1]);
 
         let mut processor = Processor::new([0x0; 4096]);
         processor.v[x] = 0xFF;
-        processor.six_seven(opcode);
+        processor.const_ops(opcode);
 
         assert_eq!(processor.v[x], 0xFF)
     }
 
     #[test]
-    fn test_zero_clear_display() {
+    fn test_misc_ops_clear_display() {
         let opcode = [0x0, 0x0, 0xE, 0x0];
 
         let mut processor = Processor::new([0x0; 4096]);
         processor.gfx = [0x2; GFX_SIZE];
-        processor.zero(opcode);
+        processor.misc_ops(opcode);
 
         assert_eq!(processor.gfx[0], 0x0)
     }
 
     #[test]
-    fn test_zero_subroutine_return() {
+    fn test_misc_ops_subroutine_return() {
         let opcode = [0x0, 0x0, 0xE, 0xE];
 
         let mut processor = Processor::new([0x0; 4096]);
         processor.stack = [0x255; 16];
         processor.sp = 0x2;
-        processor.zero(opcode);
+        processor.misc_ops(opcode);
 
         assert_eq!(processor.sp, 0x1);
         assert_eq!(processor.pc, 0x255);
@@ -260,7 +273,28 @@ mod test {
         let opcode = [0x0, 0xE, 0xE, 0xE];
 
         let mut processor = Processor::new([0x0; 4096]);
-        processor.zero(opcode);
+        processor.misc_ops(opcode);
+    }
+
+    #[test]
+    fn test_control_flow_ops_jump() {
+        let opcode = [0x1, 0xA, 0xB, 0xC];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.control_flow_ops(opcode);
+
+        assert_eq!(processor.pc, 0xABC);
+    }
+
+    #[test]
+    fn test_control_flow_ops_jump_add() {
+        let opcode = [0xB, 0xA, 0xB, 0xC];
+
+        let mut processor = Processor::new([0x0; 4096]);
+        processor.v[0x0] = 0x1;
+        processor.control_flow_ops(opcode);
+
+        assert_eq!(processor.pc, 0xABC + 0x1);
     }
 
 }

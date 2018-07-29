@@ -7,6 +7,9 @@ Rust implementation of a CHIP-8 VM.
 - **00E0**: Clears the screen.
 - **00EE**: Returns from a subroutine.
 
+- **1NNN**: Jumps to address NNN.
+- **BNNN**: Jumps to the address NNN plus V0.
+
 - **6XNN**: Sets VX to NN.
 - **7XNN**: Adds NN to VX. (Carry flag is not changed)
 

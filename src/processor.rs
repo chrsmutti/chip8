@@ -39,13 +39,21 @@ impl Processor {
             .expect("Failed to read ROM File.");
     }
 
-    pub fn start(&mut self, width: i32, height: i32, scale: u16, refresh_rate: i32) {
+    pub fn start(&mut self, scale: u16) {
         let context = sdl2::init().unwrap();
         let video = context.video().unwrap();
         let mut event_pump = context.event_pump().unwrap();
 
-        self.display
-            .start(video, width, height, scale, refresh_rate);
+        let window_width = 64 * u32::from(scale);
+        let window_height = 32 * u32::from(scale);
+
+        let window = video
+            .window("Chip8", window_width, window_height)
+            .position_centered()
+            .build()
+            .expect("Failed to create window.");
+
+        let mut canvas = window.into_canvas().present_vsync().build().unwrap();
 
         'game: loop {
             'event: for event in event_pump.poll_iter() {
@@ -63,7 +71,7 @@ impl Processor {
                 self.execute_cycle();
             }
 
-            self.display.draw(&event_pump);
+            self.display.draw(&mut canvas, scale);
             self.pc += 2;
         }
     }

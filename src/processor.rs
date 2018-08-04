@@ -1,4 +1,6 @@
 use display::Display;
+use error::ProcessorError;
+use failure::Error;
 use sdl2;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -68,15 +70,17 @@ impl Processor {
             }
 
             if self.pc < 4096 {
-                self.execute_cycle();
+                match self.execute_cycle() {
+                    Ok(step) => self.pc += step,
+                    Err(err) => panic!("{}", err),
+                }
             }
 
             self.display.draw(&mut canvas, scale);
-            self.pc += 2;
         }
     }
 
-    fn execute_cycle(&mut self) {
+    fn execute_cycle(&mut self) -> Result<usize, Error> {
         self.display.draw_flag = false;
         let opcode = self.current_opcode();
 
@@ -86,7 +90,7 @@ impl Processor {
             0x6 | 0x7 => self.const_ops(opcode),
             0x8 => self.math_bit_ops(opcode),
             0xD => self.display_ops(opcode),
-            _ => {}
+            _ => Ok(2),
         }
     }
 
@@ -110,7 +114,7 @@ impl Processor {
     }
 
     /// Implementation of the 0x0 opcodes. (Misc operations)
-    fn misc_ops(&mut self, opcode: [u8; 4]) {
+    fn misc_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
         match Self::full_opcode(opcode) {
             0x00E0 => self.display.clear(),
             0x00EE => {
@@ -120,12 +124,16 @@ impl Processor {
                 }
             }
 
-            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
         }
+
+        Ok(2)
     }
 
     /// Implementation of the 0x1, 0x2 and 0xB opcodes. (Control flow operations)
-    fn control_flow_ops(&mut self, opcode: [u8; 4]) {
+    fn control_flow_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
         let n = usize::from(Self::full_opcode(opcode) & 0x0FFF);
 
         match opcode[0] {
@@ -137,12 +145,16 @@ impl Processor {
             }
             0xB => self.pc = usize::from(self.v[0x0]) + n,
 
-            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
         }
+
+        Ok(0)
     }
 
     /// Implementation of the 0x6 and 0x7 opcodes. (Constant operations)
-    fn const_ops(&mut self, opcode: [u8; 4]) {
+    fn const_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
         let x = usize::from(opcode[1]);
         let n = (Self::full_opcode(opcode) & 0x00FF) as u8;
 
@@ -150,12 +162,16 @@ impl Processor {
             0x6 => self.v[x] = n,
             0x7 => self.v[x] = self.v[x].saturating_add(n),
 
-            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
         }
+
+        Ok(2)
     }
 
     /// Implementation of the 0x8 Opcodes. (Math and Bit operations)
-    fn math_bit_ops(&mut self, opcode: [u8; 4]) {
+    fn math_bit_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
         let x = usize::from(opcode[1]);
         let y = usize::from(opcode[2]);
 
@@ -198,12 +214,16 @@ impl Processor {
                 self.v[x] = self.v[y];
             }
 
-            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
         }
+
+        Ok(2)
     }
 
     /// Implementation of the 0xD opcode. (Display operations)
-    fn display_ops(&mut self, opcode: [u8; 4]) {
+    fn display_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
         let collision;
         let x = opcode[1] as usize;
         let y = opcode[2] as usize;
@@ -212,10 +232,13 @@ impl Processor {
         match opcode[0] {
             0xD => collision = self.display.draw_sprite(x, y, n),
 
-            _ => panic!("Non-implemented opcode: {:#X}", Self::full_opcode(opcode)),
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
         }
 
-        self.v[0xF] = if collision { 1 } else { 0 }
+        self.v[0xF] = if collision { 1 } else { 0 };
+        Ok(2)
     }
 }
 

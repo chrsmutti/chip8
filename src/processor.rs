@@ -1,6 +1,7 @@
 use display::Display;
 use error::ProcessorError;
 use failure::Error;
+use rand;
 use sdl2;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -10,10 +11,10 @@ use std::io::Read;
 #[allow(dead_code)]
 pub(crate) struct Processor {
     pc: usize,
-    i: u16,
+    i: usize,
+    sp: usize,
     memory: [u8; 4096],
     v: [u8; 16],
-    sp: usize,
     stack: [usize; 16],
     keys: [bool; 16],
     display: Display,
@@ -87,8 +88,11 @@ impl Processor {
         match opcode[0] {
             0x0 => self.misc_ops(opcode),
             0x1 | 0x2 | 0xB => self.control_flow_ops(opcode),
+            0x3 | 0x4 | 0x5 | 0x9 => self.cond_ops(opcode),
             0x6 | 0x7 => self.const_ops(opcode),
             0x8 => self.math_bit_ops(opcode),
+            0xA => self.memory_ops(opcode),
+            0xC => self.rand_ops(opcode),
             0xD => self.display_ops(opcode),
             _ => Ok(2),
         }
@@ -151,6 +155,30 @@ impl Processor {
         }
 
         Ok(0)
+    }
+
+    /// Impelementation of the 0x3, 0x4, 0x5 and 0x9 opcodes. (Conditional operations)
+    fn cond_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
+        let x = usize::from(opcode[1]);
+        let y = usize::from(opcode[2]);
+        let n = (Self::full_opcode(opcode) & 0x00FF) as u8;
+
+        let conditional = match opcode[0] {
+            0x3 => self.v[x] == n,
+            0x4 => self.v[x] != n,
+            0x5 => self.v[x] == self.v[y],
+            0x6 => self.v[x] != self.v[y],
+
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
+        };
+
+        if conditional {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
     }
 
     /// Implementation of the 0x6 and 0x7 opcodes. (Constant operations)
@@ -222,12 +250,44 @@ impl Processor {
         Ok(2)
     }
 
+    /// Implementation of the 0xA opcode. (Memory operation)
+    fn memory_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
+        let n = (Self::full_opcode(opcode) & 0x00FF) as usize;
+
+        match opcode[0] {
+            0xA => self.i = n,
+
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
+        };
+
+        Ok(2)
+    }
+
+    /// Implementation of the 0xC opcode. (Random operations)
+    fn rand_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
+        let x = usize::from(opcode[1]);
+        let n = (Self::full_opcode(opcode) & 0x00FF) as u8;
+        let random: u8 = rand::random();
+
+        match opcode[0] {
+            0xC => self.v[x] = n & random,
+
+            _ => bail!(ProcessorError::UnimplementedOpcode {
+                opcode: Self::full_opcode(opcode,)
+            }),
+        }
+
+        Ok(2)
+    }
+
     /// Implementation of the 0xD opcode. (Display operations)
     fn display_ops(&mut self, opcode: [u8; 4]) -> Result<usize, Error> {
         let collision;
-        let x = opcode[1] as usize;
-        let y = opcode[2] as usize;
-        let n = opcode[3] as usize;
+        let x = usize::from(opcode[1]);
+        let y = usize::from(opcode[2]);
+        let n = usize::from(opcode[3]);
 
         match opcode[0] {
             0xD => collision = self.display.draw_sprite(x, y, n),

@@ -6,3 +6,4 @@ authors = ["Christian Mutti <chrsmutti@gmail.com>"]
 [dependencies]
 sdl2 = "0.31.0"
 failure = "0.1.2"
+rand = "0.5.4"

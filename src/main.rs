@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate failure;
+extern crate rand;
 extern crate sdl2;
 
 mod display;
